@@ -1,7 +1,7 @@
 --// DJ MENU - ESP + AIMBOT + OUTROS
 --// Tema: Azul Escuro + Preto | Mobile
 --// Animação de abertura v2 (tela branca 2s + som do raio) + Auto-destroy
---// v4: Skeleton ESP + Aimbot 1-50 + Invis Players
+--// v4.1: Skeleton ESP + Aimbot 1-50 + Invis Players + Chams fix
 
 --// ===== AUTO-DESTROY =====
 local Players = game:GetService("Players")
@@ -51,7 +51,7 @@ local ignoredPlayers = {}
 local espEnabled = { WallChams = false, Name = false, Distance = false, Skeleton = false, InvisPlayers = false }
 local espObjects = {}
 local skeletonObjects = {}
-local invisOriginalState = {} -- guarda Transparency original de cada player
+local invisOriginalState = {}
 
 local VflyEnabled, FlySpeed = false, 60
 local CurrentVehicle, BodyVel, BodyGyro = nil, nil, nil
@@ -139,7 +139,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
---// ESP - Highlight
+--// ESP - Highlight (Chams)
 local function CreateHighlightForPlayer(player)
     if player == LocalPlayer then return end
     local char = player.Character
@@ -175,10 +175,8 @@ local function ApplyInvisToPlayer(player)
     if player == LocalPlayer then return end
     local char = player.Character
     if not char then return end
-    -- Percorre todas as partes e acessórios
     for _, obj in ipairs(char:GetDescendants()) do
         if obj:IsA("BasePart") or obj:IsA("Decal") then
-            -- Guarda o valor original só uma vez
             if invisOriginalState[obj] == nil then
                 invisOriginalState[obj] = obj.Transparency
             end
@@ -206,7 +204,6 @@ local function RevertAllInvis()
     invisOriginalState = {}
 end
 
--- Aplica/remove Invis em todos os players quando o toggle muda
 local function UpdateInvisForAll()
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
@@ -350,7 +347,7 @@ if hasDrawing then
     fovCircle.Visible = false
 end
 
---// Loop principal do ESP
+--// ===== LOOP PRINCIPAL DO ESP (CHAMS CORRIGIDO) =====
 RunService.RenderStepped:Connect(function()
     if fovCircle then
         if aimbotEnabled then
@@ -365,26 +362,32 @@ RunService.RenderStepped:Connect(function()
     local localRoot = GetLocalRoot()
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
+
+            -- ===== CHAMS (independente do Drawing) =====
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local skip = teamCheckEnabled and IsSameTeam(player)
+            local isAlive = char and char.Parent and hum and hum.Health > 0 and not skip
+
+            if isAlive and espEnabled.WallChams then
+                if not char:FindFirstChild("ESP_Highlight") then
+                    CreateHighlightForPlayer(player)
+                end
+            else
+                if char then
+                    local hl = char:FindFirstChild("ESP_Highlight")
+                    if hl then hl:Destroy() end
+                end
+            end
+
+            -- ===== ESP TEXTO (Nick / Distancia) =====
             if not espObjects[player] then CreateESPForPlayer(player) end
             local d = espObjects[player]
             if d then
-                local char = player.Character
-                local hum = char and char:FindFirstChildOfClass("Humanoid")
-                local skip = teamCheckEnabled and IsSameTeam(player)
-                if not char or not char.Parent or (hum and hum.Health <= 0) or skip then
+                if not isAlive then
                     d.Name.Visible = false
                     d.Distance.Visible = false
-                    if char then
-                        local hl = char:FindFirstChild("ESP_Highlight")
-                        if hl then hl:Destroy() end
-                    end
                 else
-                    if espEnabled.WallChams then
-                        if not char:FindFirstChild("ESP_Highlight") then CreateHighlightForPlayer(player) end
-                    else
-                        local hl = char:FindFirstChild("ESP_Highlight")
-                        if hl then hl:Destroy() end
-                    end
                     local root = char:FindFirstChild("HumanoidRootPart")
                     local head = char:FindFirstChild("Head")
                     if root and head then
@@ -415,7 +418,7 @@ RunService.RenderStepped:Connect(function()
                 end
             end
 
-            -- Atualiza Skeleton
+            -- ===== SKELETON =====
             if espEnabled.Skeleton then
                 if not skeletonObjects[player] then CreateSkeletonForPlayer(player) end
                 UpdateSkeletonForPlayer(player)
@@ -425,7 +428,7 @@ RunService.RenderStepped:Connect(function()
                 end
             end
 
-            -- Aplica Invis Players (75%)
+            -- ===== INVIS PLAYERS 75% =====
             if espEnabled.InvisPlayers then
                 ApplyInvisToPlayer(player)
             end
@@ -780,7 +783,8 @@ local function BuildGUI()
             page.ScrollBarImageColor3 = BLUE
             page.AutomaticCanvasSize = Enum.AutomaticSize.Y
             page.CanvasSize = UDim2.new(0, 0, 0, 0)
-            page.Visible = false            page.Parent = TabContent
+            page.Visible = false
+            page.Parent = TabContent
 
             local L = Instance.new("UIListLayout")
             L.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1206,7 +1210,7 @@ local function BuildGUI()
         footer.BorderSizePixel = 0
         footer.Parent = outrosPage
         local fcFooter = Instance.new("UICorner"); fcFooter.CornerRadius = UDim.new(0, 6); fcFooter.Parent = footer
-        local fsFooter = Instance.new("UIStroke"); fsFooter.Color = BLUE; fsFooter.Thickness = 1; fsFooter.Transparency = 0.7; fcFooter.Parent = footer
+        local fsFooter = Instance.new("UIStroke"); fsFooter.Color = BLUE; fsFooter.Thickness = 1; fsFooter.Transparency = 0.7; fsFooter.Parent = footer
 
         local dSym = Instance.new("TextLabel")
         dSym.Size = UDim2.new(0, 25, 1, 0); dSym.Position = UDim2.new(0, 5, 0, 0)
