@@ -1,6 +1,7 @@
 --// DJ MENU - ESP + AIMBOT + OUTROS
 --// Tema: Azul Escuro + Preto | Mobile
 --// Animação de abertura v2 (tela branca 2s + som do raio) + Auto-destroy
+--// v3: Skeleton ESP + Aimbot 1-50
 
 --// ===== AUTO-DESTROY =====
 local Players = game:GetService("Players")
@@ -47,8 +48,9 @@ local teamCheckEnabled = false
 local panelScale = 100
 local ignoredPlayers = {}
 
-local espEnabled = { WallChams = false, Name = false, Distance = false }
+local espEnabled = { WallChams = false, Name = false, Distance = false, Skeleton = false }
 local espObjects = {}
+local skeletonObjects = {}
 
 local VflyEnabled, FlySpeed = false, 60
 local CurrentVehicle, BodyVel, BodyGyro = nil, nil, nil
@@ -117,7 +119,7 @@ local function GetClosestPlayerToCrosshair()
     return closest
 end
 
---// Aimbot
+--// Aimbot (nível 1-50)
 RunService.RenderStepped:Connect(function()
     if not aimbotEnabled then return end
     local target = GetClosestPlayerToCrosshair()
@@ -125,18 +127,20 @@ RunService.RenderStepped:Connect(function()
     local tp = GetTargetPart(target)
     if not tp then return end
     local targetPos = tp.Position
-    if aimbotLevel >= 10 then
+    -- Nível 50+ = snap instantâneo
+    if aimbotLevel >= 50 then
         Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPos)
     else
-        local smooth = aimbotLevel / 10
-        if smooth < 0.05 then smooth = 0.05 end
+        -- Suavização: nível alto = mais rápido
+        local smooth = aimbotLevel / 50
+        if smooth < 0.02 then smooth = 0.02 end
         local cp = Camera.CFrame.Position
         local lv = (targetPos - cp).Unit
         Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(cp, cp + lv), smooth)
     end
 end)
 
---// ESP
+--// ESP - Highlight
 local function CreateHighlightForPlayer(player)
     if player == LocalPlayer then return end
     local char = player.Character
@@ -154,6 +158,7 @@ local function CreateHighlightForPlayer(player)
     hl.Parent = char
 end
 
+--// ESP - Textos (Nick/Distancia)
 local function CreateESPForPlayer(player)
     if player == LocalPlayer then return end
     if espObjects[player] then return end
@@ -164,6 +169,119 @@ local function CreateESPForPlayer(player)
     espObjects[player] = d
 end
 
+--// SKELETON ESP
+-- Estrutura de ossos para R6 e R15
+local skeletonBones = {
+    R6 = {
+        {"Head", "Torso"},
+        {"Torso", "Left Arm"},
+        {"Torso", "Right Arm"},
+        {"Torso", "Left Leg"},
+        {"Torso", "Right Leg"},
+    },
+    R15 = {
+        {"Head", "UpperTorso"},
+        {"UpperTorso", "LowerTorso"},
+        {"UpperTorso", "LeftUpperArm"},
+        {"LeftUpperArm", "LeftLowerArm"},
+        {"LeftLowerArm", "LeftHand"},
+        {"UpperTorso", "RightUpperArm"},
+        {"RightUpperArm", "RightLowerArm"},
+        {"RightLowerArm", "RightHand"},
+        {"LowerTorso", "LeftUpperLeg"},
+        {"LeftUpperLeg", "LeftLowerLeg"},
+        {"LeftLowerLeg", "LeftFoot"},
+        {"LowerTorso", "RightUpperLeg"},
+        {"RightUpperLeg", "RightLowerLeg"},
+        {"RightLowerLeg", "RightFoot"},
+    }
+}
+
+local function GetRigType(char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        local rig = hum.RigType
+        if rig == Enum.HumanoidRigType.R15 then return "R15" end
+        if rig == Enum.HumanoidRigType.R6 then return "R6" end
+    end
+    -- Fallback: se tem UpperTorso é R15, se tem Torso é R6
+    if char:FindFirstChild("UpperTorso") then return "R15" end
+    if char:FindFirstChild("Torso") then return "R6" end
+    return nil
+end
+
+local function CreateSkeletonForPlayer(player)
+    if player == LocalPlayer then return end
+    if skeletonObjects[player] then return end
+    if not hasDrawing then return end
+    local lines = {}
+    -- Cria 15 linhas (máximo R15) com cor azul + outline
+    for i = 1, 15 do
+        local line = Drawing.new("Line")
+        line.Thickness = 1.5
+        line.Color = BLUE
+        line.Transparency = 1
+        line.Visible = false
+        table.insert(lines, line)
+    end
+    skeletonObjects[player] = lines
+end
+
+local function RemoveSkeletonForPlayer(player)
+    local lines = skeletonObjects[player]
+    if lines then
+        for _, line in ipairs(lines) do
+            if line and line.Remove then line:Remove() end
+        end
+        skeletonObjects[player] = nil
+    end
+end
+
+local function UpdateSkeletonForPlayer(player)
+    local lines = skeletonObjects[player]
+    if not lines then return end
+    local char = player.Character
+    if not char or not char.Parent then
+        for _, l in ipairs(lines) do l.Visible = false end
+        return
+    end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then
+        for _, l in ipairs(lines) do l.Visible = false end
+        return
+    end
+    local rig = GetRigType(char)
+    if not rig then
+        for _, l in ipairs(lines) do l.Visible = false end
+        return
+    end
+    local bones = skeletonBones[rig]
+    local color = IsSameTeam(player) and Color3.fromRGB(0, 255, 100) or BLUE
+    for i, line in ipairs(lines) do
+        local bone = bones[i]
+        if bone then
+            local partA = char:FindFirstChild(bone[1])
+            local partB = char:FindFirstChild(bone[2])
+            if partA and partB then
+                local posA, onA = WorldToScreen(partA.Position)
+                local posB, onB = WorldToScreen(partB.Position)
+                if onA and onB then
+                    line.From = posA
+                    line.To = posB
+                    line.Color = color
+                    line.Visible = true
+                else
+                    line.Visible = false
+                end
+            else
+                line.Visible = false
+            end
+        else
+            line.Visible = false
+        end
+    end
+end
+
 Players.PlayerRemoving:Connect(function(player)
     local d = espObjects[player]
     if d then
@@ -172,9 +290,11 @@ Players.PlayerRemoving:Connect(function(player)
         end
         espObjects[player] = nil
     end
+    RemoveSkeletonForPlayer(player)
     ignoredPlayers[player] = nil
 end)
 
+--// FOV Circle
 local fovCircle = nil
 if hasDrawing then
     fovCircle = Drawing.new("Circle")
@@ -185,6 +305,7 @@ if hasDrawing then
     fovCircle.Visible = false
 end
 
+--// Loop principal do ESP
 RunService.RenderStepped:Connect(function()
     if fovCircle then
         if aimbotEnabled then
@@ -246,6 +367,16 @@ RunService.RenderStepped:Connect(function()
                         d.Name.Visible = false
                         d.Distance.Visible = false
                     end
+                end
+            end
+
+            -- Atualiza Skeleton
+            if espEnabled.Skeleton then
+                if not skeletonObjects[player] then CreateSkeletonForPlayer(player) end
+                UpdateSkeletonForPlayer(player)
+            else
+                if skeletonObjects[player] then
+                    for _, l in ipairs(skeletonObjects[player]) do l.Visible = false end
                 end
             end
         end
@@ -329,7 +460,6 @@ local function PlayIntro(callback)
     intro.DisplayOrder = 9999999
     intro.Parent = PlayerGui
 
-    -- Fundo preto
     local black = Instance.new("Frame")
     black.Size = UDim2.new(1, 0, 1, 0)
     black.BackgroundColor3 = Color3.new(0, 0, 0)
@@ -337,7 +467,6 @@ local function PlayIntro(callback)
     black.ZIndex = 1
     black.Parent = intro
 
-    -- Letra D central
     local dLetter = Instance.new("TextLabel")
     dLetter.Size = UDim2.new(0, 300, 0, 300)
     dLetter.Position = UDim2.new(0.5, -150, 0.5, -150)
@@ -350,7 +479,6 @@ local function PlayIntro(callback)
     dLetter.ZIndex = 2
     dLetter.Parent = intro
 
-    -- Glow roxo atrás do D
     local dGlow = Instance.new("TextLabel")
     dGlow.Size = UDim2.new(0, 300, 0, 300)
     dGlow.Position = UDim2.new(0.5, -150, 0.5, -150)
@@ -363,7 +491,6 @@ local function PlayIntro(callback)
     dGlow.ZIndex = 1
     dGlow.Parent = intro
 
-    -- Flash branco
     local flash = Instance.new("Frame")
     flash.Size = UDim2.new(1, 0, 1, 0)
     flash.BackgroundColor3 = Color3.new(1, 1, 1)
@@ -372,7 +499,6 @@ local function PlayIntro(callback)
     flash.ZIndex = 5
     flash.Parent = intro
 
-    -- Texto DJ MENU (embaixo)
     local djText = Instance.new("TextLabel")
     djText.Size = UDim2.new(1, 0, 0, 60)
     djText.Position = UDim2.new(0, 0, 0.5, 130)
@@ -385,7 +511,6 @@ local function PlayIntro(callback)
     djText.ZIndex = 3
     djText.Parent = intro
 
-    -- ===== FASE 1: D roxo aparece (1.5s) =====
     TweenService:Create(dLetter, TweenInfo.new(1.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 200}):Play()
     TweenService:Create(dGlow, TweenInfo.new(1.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 220, TextTransparency = 0.5}):Play()
 
@@ -400,7 +525,6 @@ local function PlayIntro(callback)
 
     task.wait(1.5)
 
-    -- ===== FASE 2: RAIO =====
     local thunder = Instance.new("Sound")
     thunder.SoundId = "rbxassetid://125036576486112"
     thunder.Volume = 3
@@ -419,30 +543,22 @@ local function PlayIntro(callback)
     end)
 
     task.wait(0.1)
-
     flash.BackgroundTransparency = 0
-
     dLetter.TextColor3 = BLUE
     dGlow.TextColor3 = BLUE
-
     task.wait(2)
 
     TweenService:Create(flash, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play()
-
     task.wait(0.6)
 
-    -- ===== FASE 3: D azul + DJ MENU =====
     TweenService:Create(dLetter, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 160, Position = UDim2.new(0.5, -150, 0.5, -180)}):Play()
     TweenService:Create(dGlow, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 180, TextTransparency = 0.6, Position = UDim2.new(0.5, -150, 0.5, -180)}):Play()
-
     task.wait(0.3)
 
     djText.TextTransparency = 1
     TweenService:Create(djText, TweenInfo.new(0.8, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {TextSize = 42, TextTransparency = 0}):Play()
-
     task.wait(2.2)
 
-    -- ===== FADE OUT =====
     TweenService:Create(black, TweenInfo.new(0.5), {BackgroundTransparency = 1}):Play()
     TweenService:Create(dLetter, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
     TweenService:Create(dGlow, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
@@ -959,11 +1075,12 @@ local function BuildGUI()
         CreateToggle(espPage, "WallChams", "Chams")
         CreateToggle(espPage, "Name", "Nick")
         CreateToggle(espPage, "Distance", "Distancia")
+        CreateToggle(espPage, "Skeleton", "Esqueleto")
         CreateToggle(espPage, "TeamCheck", "Team Check (Ignorar Aliados)", function(s) teamCheckEnabled = s end)
 
         local aimPage = pages["AIMBOT"]
         CreateToggle(aimPage, "Aimbot", "Ativar Aimbot")
-        CreateNumericControl(aimPage, "Nível Aimbot", 1, 10, 1, aimbotLevel, function(v) aimbotLevel = v end)
+        CreateNumericControl(aimPage, "Nível Aimbot", 1, 50, 1, aimbotLevel, function(v) aimbotLevel = v end)
         CreateNumericControl(aimPage, "Tamanho FOV", 10, 500, 5, fovSize, function(v) fovSize = v end)
         CreateBodyPartSelection(aimPage)
         CreatePlayerIgnoreList(aimPage)
