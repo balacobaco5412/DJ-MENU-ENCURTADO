@@ -1,7 +1,7 @@
 --// DJ MENU - ESP + AIMBOT + OUTROS
 --// Tema: Azul Escuro + Preto | Mobile
 --// Animação de abertura v2 (tela branca 2s + som do raio) + Auto-destroy
---// v3: Skeleton ESP + Aimbot 1-50
+--// v4: Skeleton ESP + Aimbot 1-50 + Invis Players
 
 --// ===== AUTO-DESTROY =====
 local Players = game:GetService("Players")
@@ -48,9 +48,10 @@ local teamCheckEnabled = false
 local panelScale = 100
 local ignoredPlayers = {}
 
-local espEnabled = { WallChams = false, Name = false, Distance = false, Skeleton = false }
+local espEnabled = { WallChams = false, Name = false, Distance = false, Skeleton = false, InvisPlayers = false }
 local espObjects = {}
 local skeletonObjects = {}
+local invisOriginalState = {} -- guarda Transparency original de cada player
 
 local VflyEnabled, FlySpeed = false, 60
 local CurrentVehicle, BodyVel, BodyGyro = nil, nil, nil
@@ -127,11 +128,9 @@ RunService.RenderStepped:Connect(function()
     local tp = GetTargetPart(target)
     if not tp then return end
     local targetPos = tp.Position
-    -- Nível 50+ = snap instantâneo
     if aimbotLevel >= 50 then
         Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPos)
     else
-        -- Suavização: nível alto = mais rápido
         local smooth = aimbotLevel / 50
         if smooth < 0.02 then smooth = 0.02 end
         local cp = Camera.CFrame.Position
@@ -158,7 +157,7 @@ local function CreateHighlightForPlayer(player)
     hl.Parent = char
 end
 
---// ESP - Textos (Nick/Distancia)
+--// ESP - Textos
 local function CreateESPForPlayer(player)
     if player == LocalPlayer then return end
     if espObjects[player] then return end
@@ -169,8 +168,56 @@ local function CreateESPForPlayer(player)
     espObjects[player] = d
 end
 
+--// ===== INVIS PLAYERS (75% invisível) =====
+local INVIS_TRANSPARENCY = 0.75
+
+local function ApplyInvisToPlayer(player)
+    if player == LocalPlayer then return end
+    local char = player.Character
+    if not char then return end
+    -- Percorre todas as partes e acessórios
+    for _, obj in ipairs(char:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Decal") then
+            -- Guarda o valor original só uma vez
+            if invisOriginalState[obj] == nil then
+                invisOriginalState[obj] = obj.Transparency
+            end
+            obj.Transparency = INVIS_TRANSPARENCY
+        end
+    end
+end
+
+local function RevertInvisFromPlayer(player)
+    local char = player.Character
+    if not char then return end
+    for _, obj in ipairs(char:GetDescendants()) do
+        if (obj:IsA("BasePart") or obj:IsA("Decal")) and invisOriginalState[obj] ~= nil then
+            obj.Transparency = invisOriginalState[obj]
+        end
+    end
+end
+
+local function RevertAllInvis()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            RevertInvisFromPlayer(player)
+        end
+    end
+    invisOriginalState = {}
+end
+
+-- Aplica/remove Invis em todos os players quando o toggle muda
+local function UpdateInvisForAll()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if espEnabled.InvisPlayers then
+                ApplyInvisToPlayer(player)
+            end
+        end
+    end
+end
+
 --// SKELETON ESP
--- Estrutura de ossos para R6 e R15
 local skeletonBones = {
     R6 = {
         {"Head", "Torso"},
@@ -204,7 +251,6 @@ local function GetRigType(char)
         if rig == Enum.HumanoidRigType.R15 then return "R15" end
         if rig == Enum.HumanoidRigType.R6 then return "R6" end
     end
-    -- Fallback: se tem UpperTorso é R15, se tem Torso é R6
     if char:FindFirstChild("UpperTorso") then return "R15" end
     if char:FindFirstChild("Torso") then return "R6" end
     return nil
@@ -215,7 +261,6 @@ local function CreateSkeletonForPlayer(player)
     if skeletonObjects[player] then return end
     if not hasDrawing then return end
     local lines = {}
-    -- Cria 15 linhas (máximo R15) com cor azul + outline
     for i = 1, 15 do
         local line = Drawing.new("Line")
         line.Thickness = 1.5
@@ -378,6 +423,11 @@ RunService.RenderStepped:Connect(function()
                 if skeletonObjects[player] then
                     for _, l in ipairs(skeletonObjects[player]) do l.Visible = false end
                 end
+            end
+
+            -- Aplica Invis Players (75%)
+            if espEnabled.InvisPlayers then
+                ApplyInvisToPlayer(player)
             end
         end
     end
@@ -730,8 +780,7 @@ local function BuildGUI()
             page.ScrollBarImageColor3 = BLUE
             page.AutomaticCanvasSize = Enum.AutomaticSize.Y
             page.CanvasSize = UDim2.new(0, 0, 0, 0)
-            page.Visible = false
-            page.Parent = TabContent
+            page.Visible = false            page.Parent = TabContent
 
             local L = Instance.new("UIListLayout")
             L.SortOrder = Enum.SortOrder.LayoutOrder
@@ -871,6 +920,13 @@ local function BuildGUI()
                 elseif name == "VFly" then
                     VflyEnabled = state
                     if state then EnableVFly() else DisableVFly() end
+                elseif name == "InvisPlayers" then
+                    espEnabled.InvisPlayers = state
+                    if state then
+                        UpdateInvisForAll()
+                    else
+                        RevertAllInvis()
+                    end
                 else espEnabled[name] = state end
             end
             upd()
@@ -1076,6 +1132,7 @@ local function BuildGUI()
         CreateToggle(espPage, "Name", "Nick")
         CreateToggle(espPage, "Distance", "Distancia")
         CreateToggle(espPage, "Skeleton", "Esqueleto")
+        CreateToggle(espPage, "InvisPlayers", "Invis Players (75%)")
         CreateToggle(espPage, "TeamCheck", "Team Check (Ignorar Aliados)", function(s) teamCheckEnabled = s end)
 
         local aimPage = pages["AIMBOT"]
@@ -1149,7 +1206,7 @@ local function BuildGUI()
         footer.BorderSizePixel = 0
         footer.Parent = outrosPage
         local fcFooter = Instance.new("UICorner"); fcFooter.CornerRadius = UDim.new(0, 6); fcFooter.Parent = footer
-        local fsFooter = Instance.new("UIStroke"); fsFooter.Color = BLUE; fsFooter.Thickness = 1; fsFooter.Transparency = 0.7; fsFooter.Parent = footer
+        local fsFooter = Instance.new("UIStroke"); fsFooter.Color = BLUE; fsFooter.Thickness = 1; fsFooter.Transparency = 0.7; fcFooter.Parent = footer
 
         local dSym = Instance.new("TextLabel")
         dSym.Size = UDim2.new(0, 25, 1, 0); dSym.Position = UDim2.new(0, 5, 0, 0)
